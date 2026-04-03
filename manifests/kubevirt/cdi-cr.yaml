@@ -1,0 +1,16 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: CDI
+metadata:
+  name: cdi
+  namespace: cdi
+spec:
+  config:
+    # Override default resource limits for importer pods.
+    # Default limits are too low for disk image operations.
+    podResourceRequirements:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "2"
+        memory: "2Gi"

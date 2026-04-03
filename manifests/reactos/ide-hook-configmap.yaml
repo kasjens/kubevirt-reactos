@@ -1,0 +1,52 @@
+# Hook sidecar that rewrites disk buses to IDE in the libvirt domain XML.
+# KubeVirt's admission webhook blocks bus=ide, but the QEMU i440fx machine
+# has a PIIX IDE controller that ReactOS requires. This hook runs AFTER
+# admission and patches the XML before QEMU starts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ide-bus-hook
+  namespace: reactos
+data:
+  hook.sh: |
+    #!/bin/sh
+    tempFile=$(mktemp)
+    echo "$4" > "$tempFile"
+
+    # Use Python for reliable XML manipulation — change SCSI/SATA disks to IDE
+    # and remove address elements so libvirt assigns PIIX IDE channels automatically.
+    python3 -c "
+    import xml.etree.ElementTree as ET, sys
+
+    tree = ET.parse('$tempFile')
+    root = tree.getroot()
+    devices = root.find('devices')
+
+    # Remove virtio-scsi and ahci controllers (not needed for IDE)
+    for ctrl in list(devices.findall('controller')):
+        ctype = ctrl.get('type','')
+        model = ctrl.get('model','')
+        if ctype == 'scsi' or model == 'ahci' or (ctype == 'sata'):
+            devices.remove(ctrl)
+
+    # Change disk buses from scsi/sata to ide
+    idx = 0
+    for disk in devices.findall('disk'):
+        target = disk.find('target')
+        if target is not None:
+            bus = target.get('bus','')
+            if bus in ('scsi','sata'):
+                target.set('bus', 'ide')
+                # IDE naming: hda, hdb, hdc, hdd
+                target.set('dev', 'hd' + chr(ord('a') + idx))
+                # Remove existing address so libvirt auto-assigns IDE channel
+                addr = disk.find('address')
+                if addr is not None:
+                    disk.remove(addr)
+                idx += 1
+
+    tree.write('$tempFile', xml_declaration=True, encoding='unicode')
+    "
+
+    cat "$tempFile"
+    rm -f "$tempFile"

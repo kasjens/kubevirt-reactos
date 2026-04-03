@@ -1,0 +1,19 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: reactos-boot-disk
+  namespace: reactos
+  labels:
+    app.kubernetes.io/part-of: kubevirt-reactos
+spec:
+  source:
+    blank: {}
+  storage:
+    storageClassName: local-path
+    accessModes:
+      - ReadWriteOnce
+    volumeMode: Filesystem
+    resources:
+      requests:
+        # ReactOS is tiny — 4 GiB is plenty for the OS + apps
+        storage: 4Gi

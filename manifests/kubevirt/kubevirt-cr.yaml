@@ -1,0 +1,25 @@
+apiVersion: kubevirt.io/v1
+kind: KubeVirt
+metadata:
+  name: kubevirt
+  namespace: kubevirt
+spec:
+  configuration:
+    # Allow i440fx machine type for ReactOS (no q35/PCIe support)
+    emulatedMachines:
+      - "q35*"
+      - "pc-q35*"
+      - "pc-i440fx*"
+      - "pc*"
+    developerConfiguration:
+      featureGates:
+        - HotplugVolumes
+        - CommonInstancetypesDeployment
+        - Sidecar
+      # Uncomment if running inside a VM without nested virtualization:
+      # useEmulation: true    # WARNING: ~10x slower, for testing only
+    network:
+      defaultNetworkInterface: masquerade
+  workloadUpdateStrategy:
+    workloadUpdateMethods:
+      - LiveMigrate

@@ -1,0 +1,118 @@
+# ReactOS VirtualMachine — ALL KubeVirt defaults are overridden.
+#
+# ReactOS has NO working VirtIO drivers:
+#   - viostor (block):   makes ReactOS unbootable (JIRA CORE-12695)
+#   - virtio-net:        crashes (CORE-4615)
+#   - QXL (display):     BSOD on every boot (CORE-9779)
+#   - memory balloon:    not supported
+#
+# KubeVirt ≥1.8 defaults to q35-only; i440fx re-enabled via
+# spec.configuration.emulatedMachines in the KubeVirt CR.
+# IDE bus is hard-blocked in admission; use sata (maps to IDE on i440fx).
+# Machine type: pc-i440fx (ReactOS crashes on q35 PCIe/ICH9/ACPI).
+# NIC must be e1000 (built-in driver, Gigabit).
+# Boot must be BIOS (ReactOS UEFI support is experimental).
+
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: reactos
+  namespace: reactos
+  labels:
+    app.kubernetes.io/part-of: kubevirt-reactos
+    os: reactos
+spec:
+  running: true
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: reactos
+      annotations:
+        # Hook sidecar rewrites disk bus from scsi→ide in libvirt XML.
+        # KubeVirt blocks bus=ide in admission, but i440fx needs PIIX IDE.
+        hooks.kubevirt.io/hookSidecars: >
+          [{"args":["--version","v1alpha2"],
+            "configMap":{"name":"ide-bus-hook","key":"hook.sh",
+                         "hookPath":"/usr/bin/onDefineDomain"}}]
+    spec:
+      domain:
+        # ── Machine: i440fx with BIOS ─────────────────────────────
+        machine:
+          type: pc-i440fx-rhel7.6.0
+        firmware:
+          bootloader:
+            bios: {}
+
+        # ── CPU / Memory ────────────────────────────────────────
+        cpu:
+          cores: 2
+        resources:
+          requests:
+            memory: 1Gi
+          limits:
+            memory: 1Gi
+
+        # ── Clock: localtime (ReactOS expects it, like Windows) ─
+        clock:
+          utc: {}
+          timer:
+            rtc:
+              tickPolicy: catchup
+            pit:
+              tickPolicy: delay
+            hpet:
+              present: false
+
+        # ── Devices ─────────────────────────────────────────────
+        devices:
+          # Boot disk — SCSI (virtio-scsi; SeaBIOS can boot from it,
+          # and ReactOS installer can use SCSI disks during setup)
+          disks:
+            - name: boot-disk
+              disk:
+                bus: scsi
+              bootOrder: 1
+            # Installation ISO — SCSI CD-ROM
+            # Remove this volume once ReactOS is fully installed.
+            - name: install-iso
+              cdrom:
+                bus: scsi
+                readonly: true
+              bootOrder: 2
+
+          # Network — e1000 (built-in driver, Gigabit)
+          interfaces:
+            - name: default
+              model: e1000
+              masquerade: {}
+
+          # USB tablet for absolute cursor positioning (fixes VNC offset)
+          inputs:
+            - name: tablet
+              type: tablet
+              bus: usb
+
+          # Display — standard VGA (QXL causes BSOD)
+          autoattachGraphicsDevice: true
+
+          # Disable memory balloon — not supported by ReactOS
+          autoattachMemBalloon: false
+
+          # RNG device for entropy
+          rng: {}
+
+      # ── Networks ────────────────────────────────────────────
+      networks:
+        - name: default
+          pod: {}
+
+      # ── Volumes ─────────────────────────────────────────────
+      volumes:
+        - name: boot-disk
+          dataVolume:
+            name: reactos-boot-disk
+        - name: install-iso
+          dataVolume:
+            name: reactos-iso
+
+      terminationGracePeriodSeconds: 30
